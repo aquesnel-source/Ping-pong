@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8" />
-<title>Pong Turn-Based System</title>
+<title>Pong</title>
 <style>
   html, body {
     margin: 0;
@@ -21,7 +21,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-// ---------------- FULLSCREEN ----------------
+// ---------------- SCREEN ----------------
 let WIDTH = window.innerWidth;
 let HEIGHT = window.innerHeight;
 
@@ -36,17 +36,18 @@ resize();
 
 // ---------------- STATES ----------------
 const MENU = "menu";
-const MODE = "mode";
+const SCORE = "score";
+const DIFFICULTY = "difficulty";
 const COUNTDOWN = "countdown";
 const PLAY = "play";
 const END = "end";
 
 let state = MENU;
 
-// ---------------- GAME SETTINGS ----------------
-let gameMode = 1; // 1 AI, 2 PvP
-let turnLimit = 10;
-let turnCount = 0;
+// ---------------- SETTINGS ----------------
+let scoreToWin = 10;
+let aiDifficulty = 2;
+let gameMode = 1;
 
 // ---------------- OBJECTS ----------------
 const PW = 10;
@@ -65,29 +66,17 @@ let baseSpeed = WIDTH / 320;
 let ballSpeedX = 0;
 let ballSpeedY = 0;
 
-// ---------------- HIT SYSTEM ----------------
+// ---------------- HIT SPEED SYSTEM ----------------
 let totalHits = 0;
 
-function earlySlow() {
-  if (totalHits <= 1) return 0.25;
-  if (totalHits === 2) return 0.50;
-  if (totalHits === 3) return 0.75;
-  if (totalHits <= 5) return 1.0;
-  return 1.0;
-}
-
-function globalBoost() {
-  return 1 + Math.floor(totalHits / 5) * 0.10;
-}
-
 function applySpeed() {
-  let sp = baseSpeed * earlySlow() * globalBoost();
+  let multiplier = 1 + Math.floor(totalHits / 5) * 0.10;
 
   let angle = Math.atan2(ballSpeedY, ballSpeedX);
-  let mag = Math.hypot(ballSpeedX, ballSpeedY);
+  let speed = baseSpeed * multiplier;
 
-  ballSpeedX = Math.cos(angle) * sp;
-  ballSpeedY = Math.sin(angle) * sp;
+  ballSpeedX = Math.cos(angle) * speed;
+  ballSpeedY = Math.sin(angle) * speed;
 }
 
 // ---------------- SCORE ----------------
@@ -98,59 +87,73 @@ let rightScore = 0;
 let keys = {};
 
 document.addEventListener("keydown", e => {
-  keys[e.key] = true;
+  const key = e.key.toLowerCase();
+
+  // prevent repeat spam
+  if (keys[key]) return;
+  keys[key] = true;
 
   if (state === MENU) {
-    if (e.key === "1") { gameMode = 1; state = MODE; }
-    if (e.key === "2") { gameMode = 2; state = MODE; }
+    if (key === "1") { gameMode = 1; state = SCORE; }
+    if (key === "2") { gameMode = 2; state = SCORE; }
   }
 
-  if (state === MODE) {
-    if (e.key === "5") { turnLimit = 5; startMatch(); }
-    if (e.key === "1") { turnLimit = 10; startMatch(); }
-    if (e.key === "2") { turnLimit = 25; startMatch(); }
-    if (e.key === "3") { turnLimit = 50; startMatch(); }
+  else if (state === SCORE) {
+    if (key === "1") { scoreToWin = 5; nextStep(); }
+    if (key === "2") { scoreToWin = 10; nextStep(); }
+    if (key === "3") { scoreToWin = 25; nextStep(); }
+    if (key === "4") { scoreToWin = 50; nextStep(); }
   }
 
-  if (state === END && e.key === "r") {
-    state = MENU;
+  else if (state === DIFFICULTY) {
+    if (key === "1") { aiDifficulty = 1; startMatch(); }
+    if (key === "2") { aiDifficulty = 2; startMatch(); }
+    if (key === "3") { aiDifficulty = 3; startMatch(); }
   }
+
+  if (state === END && key === "r") state = MENU;
 });
 
-document.addEventListener("keyup", e => keys[e.key] = false);
+document.addEventListener("keyup", e => {
+  keys[e.key.toLowerCase()] = false;
+});
+
+function nextStep() {
+  if (gameMode === 1) state = DIFFICULTY;
+  else startMatch();
+}
 
 // ---------------- AI ----------------
 let aiTarget = HEIGHT/2;
 let aiTimer = 0;
 
 function aiMove() {
-  let reaction = 18;
-  let error = 100;
-  let smooth = 0.06;
+  let reaction, error, speed;
 
-  if (ballSpeedX > 0) {
-    let dist = right.x - ball.x;
-    let time = dist / Math.max(ballSpeedX, 0.01);
-    let predicted = ball.y + ballSpeedY * time;
-
-    predicted = Math.max(0, Math.min(HEIGHT, predicted));
-
-    if (aiTimer++ >= reaction) {
-      aiTimer = 0;
-      aiTarget = predicted + (Math.random() * error * 2 - error);
-    }
+  if (aiDifficulty === 1) {
+    reaction = 30; error = 180; speed = 0.05;
+  } else if (aiDifficulty === 2) {
+    reaction = 20; error = 100; speed = 0.08;
   } else {
-    aiTarget = HEIGHT/2;
+    reaction = 10; error = 40; speed = 0.12;
   }
 
-  right.y += ((aiTarget - (right.y + right.h/2)) * smooth);
+  if (aiTimer++ >= reaction) {
+    aiTimer = 0;
+
+    let predicted = ball.y + ballSpeedY * 10;
+    predicted += (Math.random() * error - error/2);
+
+    aiTarget = Math.max(0, Math.min(HEIGHT, predicted));
+  }
+
+  right.y += (aiTarget - (right.y + right.h/2)) * speed;
 }
 
-// ---------------- START MATCH ----------------
+// ---------------- START ----------------
 let countdown = 3;
 
 function startMatch() {
-  turnCount = 0;
   leftScore = 0;
   rightScore = 0;
   totalHits = 0;
@@ -169,17 +172,13 @@ function startMatch() {
   }, 1000);
 }
 
-// ---------------- RESET BALL ----------------
+// ---------------- BALL ----------------
 function resetBall(dir) {
   ball.x = WIDTH/2;
   ball.y = HEIGHT/2;
 
-  baseSpeed = WIDTH / 320;
-
   ballSpeedX = baseSpeed * dir;
   ballSpeedY = baseSpeed * (Math.random() < 0.5 ? -1 : 1);
-
-  applySpeed();
 }
 
 // ---------------- SCORING ----------------
@@ -187,56 +186,63 @@ function score(side) {
   if (side === "left") leftScore++;
   else rightScore++;
 
-  turnCount++;
-
-  if (turnCount >= turnLimit) {
+  if (leftScore >= scoreToWin || rightScore >= scoreToWin) {
     state = END;
   } else {
+    totalHits = 0;
     resetBall(Math.random() < 0.5 ? -1 : 1);
   }
 }
 
 // ---------------- DRAW ----------------
+function drawCentered(text, size, y) {
+  ctx.font = `${size}px Arial`;
+  ctx.fillText(text, WIDTH/2, y);
+}
+
 function drawMenu() {
   ctx.fillStyle = "black";
   ctx.fillRect(0,0,WIDTH,HEIGHT);
-
   ctx.fillStyle = "white";
   ctx.textAlign = "center";
 
-  ctx.font = `${WIDTH/20}px Arial`;
-  ctx.fillText("Select Mode", WIDTH/2, HEIGHT/3);
-
-  ctx.font = `${WIDTH/40}px Arial`;
-  ctx.fillText("1 - Single Player", WIDTH/2, HEIGHT/2);
-  ctx.fillText("2 - PvP", WIDTH/2, HEIGHT/2 + 50);
+  drawCentered("Select Mode", WIDTH/20, HEIGHT/3);
+  drawCentered("1 - vs AI", WIDTH/40, HEIGHT/2);
+  drawCentered("2 - PvP", WIDTH/40, HEIGHT/2 + 50);
 }
 
-function drawMode() {
+function drawScore() {
   ctx.fillStyle = "black";
   ctx.fillRect(0,0,WIDTH,HEIGHT);
-
   ctx.fillStyle = "white";
   ctx.textAlign = "center";
 
-  ctx.font = `${WIDTH/20}px Arial`;
-  ctx.fillText("Match Length (Turns)", WIDTH/2, HEIGHT/3);
+  drawCentered("Score To Win", WIDTH/20, HEIGHT/3);
+  drawCentered("5 (1)", WIDTH/40, HEIGHT/2);
+  drawCentered("10 (2)", WIDTH/40, HEIGHT/2 + 40);
+  drawCentered("25 (3)", WIDTH/40, HEIGHT/2 + 80);
+  drawCentered("50 (4)", WIDTH/40, HEIGHT/2 + 120);
+}
 
-  ctx.font = `${WIDTH/40}px Arial`;
-  ctx.fillText("5 (press 5)", WIDTH/2, HEIGHT/2);
-  ctx.fillText("10 (press 1)", WIDTH/2, HEIGHT/2 + 40);
-  ctx.fillText("25 (press 2)", WIDTH/2, HEIGHT/2 + 80);
-  ctx.fillText("50 (press 3)", WIDTH/2, HEIGHT/2 + 120);
+function drawDifficulty() {
+  ctx.fillStyle = "black";
+  ctx.fillRect(0,0,WIDTH,HEIGHT);
+  ctx.fillStyle = "white";
+  ctx.textAlign = "center";
+
+  drawCentered("AI Difficulty", WIDTH/20, HEIGHT/3);
+  drawCentered("Easy (1)", WIDTH/40, HEIGHT/2);
+  drawCentered("Medium (2)", WIDTH/40, HEIGHT/2 + 40);
+  drawCentered("Hard (3)", WIDTH/40, HEIGHT/2 + 80);
 }
 
 function drawCountdown() {
   ctx.fillStyle = "black";
   ctx.fillRect(0,0,WIDTH,HEIGHT);
-
   ctx.fillStyle = "white";
   ctx.textAlign = "center";
-  ctx.font = `${WIDTH/8}px Arial`;
-  ctx.fillText(countdown, WIDTH/2, HEIGHT/2);
+
+  drawCentered(countdown, WIDTH/8, HEIGHT/2);
 }
 
 function drawGame() {
@@ -257,35 +263,33 @@ function drawGame() {
 function drawEnd() {
   ctx.fillStyle = "black";
   ctx.fillRect(0,0,WIDTH,HEIGHT);
-
   ctx.fillStyle = "white";
   ctx.textAlign = "center";
-  ctx.font = `${WIDTH/25}px Arial`;
 
-  ctx.fillText("Game Over", WIDTH/2, HEIGHT/2 - 40);
-  ctx.fillText(`${leftScore} - ${rightScore}`, WIDTH/2, HEIGHT/2);
-  ctx.font = `${WIDTH/40}px Arial`;
-  ctx.fillText("Press R to restart", WIDTH/2, HEIGHT/2 + 60);
+  let winner = leftScore > rightScore ? "Left Wins!" : "Right Wins!";
+
+  drawCentered(winner, WIDTH/25, HEIGHT/2);
+  drawCentered(`${leftScore} - ${rightScore}`, WIDTH/25, HEIGHT/2 + 40);
+  drawCentered("Press R to restart", WIDTH/40, HEIGHT/2 + 100);
 }
 
 // ---------------- LOOP ----------------
 function update() {
 
   if (state === MENU) return drawMenu();
-  if (state === MODE) return drawMode();
+  if (state === SCORE) return drawScore();
+  if (state === DIFFICULTY) return drawDifficulty();
   if (state === COUNTDOWN) return drawCountdown();
   if (state === END) return drawEnd();
 
   let s = paddleSpeed();
 
-  // LEFT
   if (keys["w"]) left.y -= s;
   if (keys["s"]) left.y += s;
 
-  // RIGHT
   if (gameMode === 2) {
-    if (keys["ArrowUp"]) right.y -= s;
-    if (keys["ArrowDown"]) right.y += s;
+    if (keys["arrowup"]) right.y -= s;
+    if (keys["arrowdown"]) right.y += s;
   } else {
     aiMove();
   }
@@ -293,7 +297,6 @@ function update() {
   left.y = Math.max(0, Math.min(HEIGHT - left.h, left.y));
   right.y = Math.max(0, Math.min(HEIGHT - right.h, right.y));
 
-  // BALL
   ball.x += ballSpeedX;
   ball.y += ballSpeedY;
 
